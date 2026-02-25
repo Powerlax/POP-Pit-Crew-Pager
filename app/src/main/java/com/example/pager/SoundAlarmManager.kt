@@ -36,6 +36,55 @@ class SoundAlarmManager(private val context: Context) {
     private var textToSpeech: TextToSpeech? = null
     private var ttsInitialized = false
     private var pendingTTSText: String? = null
+    private var pendingVolume: Float = 1.0f
+    private var pendingSpeechRate: Float = 1.0f
+    private var selectedVoice: String? = null
+
+    /**
+     * Lists all available TTS voices on the device.
+     * Returns a list of voice names with their quality and locale info.
+     */
+    fun getAvailableVoices(): List<String> {
+        if (!ttsInitialized) {
+            Log.w(TAG, "TTS not initialized yet")
+            return emptyList()
+        }
+
+        return textToSpeech?.voices?.map { voice ->
+            val quality = when {
+                voice.quality >= 400 -> "Very High"
+                voice.quality >= 300 -> "High"
+                voice.quality >= 200 -> "Normal"
+                else -> "Low"
+            }
+            "${voice.name} (${voice.locale.displayName}, Quality: $quality)"
+        }?.sorted() ?: emptyList()
+    }
+
+    /**
+     * Sets the TTS voice by name.
+     * Use getAvailableVoices() to see available options.
+     * @param voiceName The name of the voice to use (e.g., "en-us-x-tpf-local")
+     */
+    fun setTTSVoice(voiceName: String) {
+        selectedVoice = voiceName
+        if (ttsInitialized) {
+            applyVoiceSelection()
+        }
+    }
+
+    private fun applyVoiceSelection() {
+        textToSpeech?.voices?.find { it.name == selectedVoice }?.let { voice ->
+            val result = textToSpeech?.setVoice(voice)
+            if (result == TextToSpeech.SUCCESS) {
+                Log.d(TAG, "Voice set to: ${voice.name} (${voice.locale.displayName})")
+            } else {
+                Log.e(TAG, "Failed to set voice: ${voice.name}")
+            }
+        } ?: run {
+            Log.w(TAG, "Voice not found: $selectedVoice")
+        }
+    }
 
     /**
      * Plays a sequence of audio files by name.
@@ -61,8 +110,9 @@ class SoundAlarmManager(private val context: Context) {
      * Plays text using text-to-speech.
      * @param text The text to speak.
      * @param volume Volume level (0.0 to 1.0). Default is 1.0 (maximum).
+     * @param speechRate Speech rate (0.5 = half speed, 1.0 = normal, 2.0 = double speed). Default is 1.0.
      */
-    fun playTTSVoice(text: String, volume: Float = 1.0f) {
+    fun playTTSVoice(text: String, volume: Float = 1.0f, speechRate: Float = 1.0f) {
         if (text.isBlank()) {
             Log.w(TAG, "TTS text is empty")
             return
@@ -70,18 +120,21 @@ class SoundAlarmManager(private val context: Context) {
 
         stopSound()
 
-        Log.d(TAG, "Playing TTS: $text")
+        Log.d(TAG, "Playing TTS: $text (rate: $speechRate)")
 
         if (!ttsInitialized) {
             Log.d(TAG, "Initializing TextToSpeech engine")
             pendingTTSText = text
-            initializeTTS(volume)
+            initializeTTS(volume, speechRate)
         } else {
-            speakText(text, volume)
+            speakText(text, volume, speechRate)
         }
     }
 
-    private fun initializeTTS(volume: Float) {
+    private fun initializeTTS(volume: Float, speechRate: Float) {
+        pendingVolume = volume
+        pendingSpeechRate = speechRate
+
         textToSpeech = TextToSpeech(context) { status ->
             if (status == TextToSpeech.SUCCESS) {
                 textToSpeech?.let { tts ->
@@ -93,9 +146,21 @@ class SoundAlarmManager(private val context: Context) {
                         ttsInitialized = true
                         Log.d(TAG, "TTS initialized successfully")
 
+                        // Select best quality voice or user's preference
+                        if (selectedVoice != null) {
+                            applyVoiceSelection()
+                        } else {
+                            selectBestVoice()
+                        }
+
+                        // Log available voices for debugging
+                        tts.voices?.forEach { voice ->
+                            Log.d(TAG, "Available voice: ${voice.name}, Quality: ${voice.quality}, Locale: ${voice.locale}")
+                        }
+
                         // Play pending text if any
                         pendingTTSText?.let { text ->
-                            speakText(text, volume)
+                            speakText(text, pendingVolume, pendingSpeechRate)
                             pendingTTSText = null
                         }
                     }
@@ -107,8 +172,22 @@ class SoundAlarmManager(private val context: Context) {
         }
     }
 
-    private fun speakText(text: String, volume: Float) {
+    private fun selectBestVoice() {
+        // Try to select the highest quality US English voice
+        textToSpeech?.voices
+            ?.filter { it.locale.language == "en" && it.locale.country == "US" }
+            ?.maxByOrNull { it.quality }
+            ?.let { bestVoice ->
+                textToSpeech?.setVoice(bestVoice)
+                Log.d(TAG, "Selected best voice: ${bestVoice.name} (Quality: ${bestVoice.quality})")
+            }
+    }
+
+    private fun speakText(text: String, volume: Float, speechRate: Float) {
         textToSpeech?.let { tts ->
+            // Set speech rate (0.5 = half speed, 1.0 = normal, 2.0 = double speed)
+            tts.setSpeechRate(speechRate)
+
             // Set audio attributes for TTS
             val audioAttributes = AudioAttributes.Builder()
                 .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)

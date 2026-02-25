@@ -45,79 +45,78 @@ class MainActivity : AppCompatActivity() {
             Log.d(TAG, "Message notification - Sender: $sender, Body: $messageBody")
 
             val tokens = messageBody.split("-")
-            val audioList = mutableListOf<String>()
+            var audioList = ""
             for (token in tokens) {
                 Log.d(TAG, "Token: '${token.trim()}'")
             }
             if (tokens.size > 2) {
-                audioList.add("intro.m4a")
-                audioList.add(
-                    when (tokens[0].trim().lowercase()) {
-                        "pf" -> "practice_field.m4a"
-                        "mf" -> "main_field.m4a"
-                        "p" -> "pit.m4a"
-                        else -> "BAD_REQUEST"
-                    }
-                )
-                audioList.add("there_is_a.m4a")
-                audioList.add(
-                    when (tokens[1].trim().lowercase()) {
-                        "e" -> "emergency.m4a"
-                        "m" -> "medium_issue.m4a"
-                        "s" -> "small_issue.m4a"
-                        else -> "BAD_REQUEST"
-                    }
-                )
-                audioList.add("with_the_robot.m4a")
-                if (tokens.size >= 5) audioList.add("specifically.m4a")
+                audioList += "Attention Pack of Parts pit crew! Please report to the "
+                audioList += when (tokens[0].trim().lowercase()) {
+                    "pf" -> "practice field"
+                    "mf" -> "main field"
+                    "p" -> "pit"
+                    else -> "BAD_REQUEST"
+                }
+                audioList += " as there is a "
+                audioList += when (tokens[1].trim().lowercase()) {
+                    "e" -> "emergency"
+                    "m" -> "medium issue"
+                    "s" -> "small issue"
+                    else -> "BAD_REQUEST"
+                }
+                audioList += " with the robot. "
+                if (tokens.size >= 5) audioList += "Specifically, "
                 var i = 2
                 while (i + 2 < tokens.size) {
-                    audioList.add("there_is_a.m4a")
+                    audioList += "There is a "
                     val subsystem = tokens[i].trim().lowercase()
                     val subteam = tokens[i + 1].trim().lowercase()
                     val severity = tokens[i + 2].trim().lowercase()
-                    audioList.add(
+                    audioList +=
                         when (severity) {
-                            "1" -> "sev_1.m4a"
-                            "2" -> "sev_2.m4a"
-                            "3" -> "sev_3.m4a"
-                            "4" -> "sev_4.m4a"
-                            "5" -> "sev_5.m4a"
+                            "1" -> "Severity 1"
+                            "2" -> "Severity 2"
+                            "3" -> "Severity 3"
+                            "4" -> "Severity 4"
+                            "5" -> "Severity 5"
                             else -> "BAD_REQUEST"
                         }
-                    )
-                    audioList.add(
+                    audioList += " "
+                    audioList +=
                         when (subteam) {
-                            "e" -> "electrical.m4a"
-                            "m" -> "mechanical.m4a"
-                            "p" -> "programming.m4a"
-                            "a" -> "all_hands.m4a"
+                            "e" -> "electrical"
+                            "m" -> "mechanical"
+                            "p" -> "programming"
+                            "a" -> "all hands"
                             else -> "BAD_REQUEST"
                         }
-                    )
-                    audioList.add("issue_with_the.m4a")
-                    audioList.add(
+                    audioList += " issue with the "
+                    audioList +=
                         when (subsystem) {
-                            "ind" -> "indexer.m4a"
-                            "shtr" -> "launcher.m4a"
-                            "clmb" -> "climb.m4a"
-                            "dt" -> "drivetrain.m4a"
-                            "int" -> "intake.m4a"
-                            "hand" -> "handoff.m4a"
+                            "ind" -> "indexer"
+                            "shtr" -> "launcher"
+                            "clmb" -> "climb"
+                            "dt" -> "drivetrain"
+                            "int" -> "intake"
+                            "hand" -> "handoff"
                             else -> "BAD_REQUEST"
                         }
-                    )
+                    audioList += ". "
                     i += 3
+                }
+                if (i < tokens.size - 1) {
+                    audioList += " Logan says: " + tokens[tokens.size-1]
                 }
                 for (audio in audioList) {
                     Log.d(TAG, "Audio to play: $audio")
                 }
                 if ("BAD_REQUEST" !in audioList) {
-                    soundAlarmManager.playMessage(audioList)
-                    soundAlarmManager.playTTSVoice()
-                } else{
+                    // soundAlarmManager.playMessage(audioList)
+                    soundAlarmManager.setTTSVoice("en-us-x-iom-local");
+                    soundAlarmManager.playTTSVoice(audioList, volume = 1.0f, speechRate = 1.15f)
+                } else {
                     Log.e(TAG, "Received message with invalid format: $messageBody")
-                    soundAlarmManager.playMessage(listOf("intro.m4a", "sev_1.m4a", "there_is_a.m4a"))
+                    soundAlarmManager.playTTSVoice("Read with bad format", volume = 1.0f, speechRate = 1.15f);
                 }
             }
         }
@@ -130,6 +129,59 @@ class MainActivity : AppCompatActivity() {
                 .setAnchorView(R.id.fab)
                 .show()
         }
+
+        binding.fab.setOnClickListener { view ->
+            // Test each voice sequentially
+            val eng_voices = listOf(
+                "en-us-x-sfg-local",
+                "en-us-x-iom-local",
+                "en-us-x-tpc-local",
+            )
+
+            Snackbar.make(view, "Testing ${eng_voices.size} voices...", Snackbar.LENGTH_SHORT)
+                .setAnchorView(R.id.fab).show()
+
+            testVoicesSequentially(eng_voices, 0)
+        }
+
+        binding.fab.setOnLongClickListener { view ->
+            // List available TTS voices
+            val voices = soundAlarmManager.getAvailableVoices()
+            if (voices.isNotEmpty()) {
+                Log.d(TAG, "=== Available TTS Voices ===")
+                voices.forEachIndexed { index, voice ->
+                    Log.d(TAG, "${index + 1}. $voice")
+                }
+                Snackbar.make(view, "Listed ${voices.size} voices in logs", Snackbar.LENGTH_LONG)
+                    .setAnchorView(R.id.fab)
+                    .show()
+            } else {
+                Snackbar.make(view, "No voices available yet. Play TTS first.", Snackbar.LENGTH_LONG)
+                    .setAnchorView(R.id.fab)
+                    .show()
+            }
+            true
+        }
+    }
+
+    private fun testVoicesSequentially(voices: List<String>, index: Int) {
+        if (index >= voices.size) {
+            Log.d(TAG, "=== Voice testing completed ===")
+            Snackbar.make(binding.root, "Voice testing completed!", Snackbar.LENGTH_SHORT)
+                .setAnchorView(R.id.fab).show()
+            return
+        }
+
+        val voiceName = voices[index]
+        Log.d(TAG, "Testing voice ${index + 1}/${voices.size}: $voiceName")
+
+        soundAlarmManager.setTTSVoice(voiceName)
+        soundAlarmManager.playTTSVoice("Voice ${index + 1}: Attention POP pit crew! Please report to the practice field as there is a emergency with the robot. Specifically, There is a Severity 1 electrical issue with the indexer. There is a Severity 2 mechanical issue with the drivetrain.", volume = 1.0f, speechRate = 1.15f)
+
+        // Wait 4 seconds before testing next voice
+        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+            testVoicesSequentially(voices, index + 1)
+        }, 20000)
     }
 
     override fun onCreateOptionsMenu(menu: Menu): Boolean {
