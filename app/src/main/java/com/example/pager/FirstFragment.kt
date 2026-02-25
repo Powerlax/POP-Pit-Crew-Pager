@@ -1,39 +1,52 @@
 package com.example.pager
 
+import android.content.Context
 import android.os.Bundle
 import androidx.fragment.app.Fragment
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import androidx.navigation.fragment.findNavController
 import com.example.pager.databinding.FragmentFirstBinding
+import androidx.core.content.edit
 
 /**
  * A simple [Fragment] subclass as the default destination in the navigation.
  */
 class FirstFragment : Fragment() {
-
     private var _binding: FragmentFirstBinding? = null
-
-    // This property is only valid between onCreateView and
-    // onDestroyView.
     private val binding get() = _binding!!
+
+    companion object {
+        private const val PREFS_NAME = "PagerPrefs"
+        private const val KEY_NOTIFICATIONS_ENABLED = "notifications_enabled"
+    }
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?,
         savedInstanceState: Bundle?
     ): View {
-
         _binding = FragmentFirstBinding.inflate(inflater, container, false)
         return binding.root
-
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+        val prefs = requireContext().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val isEnabled = prefs.getBoolean(KEY_NOTIFICATIONS_ENABLED, true)
+        binding.notificationSwitch.isChecked = isEnabled
+        updateStatusText(isEnabled)
+        binding.notificationSwitch.setOnCheckedChangeListener { _, isChecked ->
+            prefs.edit { putBoolean(KEY_NOTIFICATIONS_ENABLED, isChecked) }
+            (activity as? MainActivity)?.setNotificationsEnabled(isChecked)
+            updateStatusText(isChecked)
+        }
+    }
 
-        binding.buttonFirst.setOnClickListener {
-            findNavController().navigate(R.id.action_FirstFragment_to_SecondFragment)
+    private fun updateStatusText(enabled: Boolean) {
+        binding.statusText.text = if (enabled) {
+            "Status: Active - Listening for messages"
+        } else {
+            "Status: Disabled - Not listening"
         }
     }
 

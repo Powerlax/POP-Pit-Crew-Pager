@@ -1,8 +1,8 @@
 package com.example.pager
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.media.AudioAttributes
-import android.media.AudioManager
 import android.media.MediaPlayer
 import android.os.Bundle
 import android.os.Handler
@@ -13,13 +13,11 @@ import android.util.Log
 import java.util.Locale
 
 class SoundAlarmManager(private val context: Context) {
-
     companion object {
         private const val TAG = "SoundAlarmManager"
-
+        @SuppressLint("StaticFieldLeak")
         @Volatile
         private var instance: SoundAlarmManager? = null
-
         fun getInstance(context: Context): SoundAlarmManager {
             return instance ?: synchronized(this) {
                 instance ?: SoundAlarmManager(context.applicationContext).also {
@@ -40,32 +38,6 @@ class SoundAlarmManager(private val context: Context) {
     private var pendingSpeechRate: Float = 1.0f
     private var selectedVoice: String? = null
 
-    /**
-     * Lists all available TTS voices on the device.
-     * Returns a list of voice names with their quality and locale info.
-     */
-    fun getAvailableVoices(): List<String> {
-        if (!ttsInitialized) {
-            Log.w(TAG, "TTS not initialized yet")
-            return emptyList()
-        }
-
-        return textToSpeech?.voices?.map { voice ->
-            val quality = when {
-                voice.quality >= 400 -> "Very High"
-                voice.quality >= 300 -> "High"
-                voice.quality >= 200 -> "Normal"
-                else -> "Low"
-            }
-            "${voice.name} (${voice.locale.displayName}, Quality: $quality)"
-        }?.sorted() ?: emptyList()
-    }
-
-    /**
-     * Sets the TTS voice by name.
-     * Use getAvailableVoices() to see available options.
-     * @param voiceName The name of the voice to use (e.g., "en-us-x-tpf-local")
-     */
     fun setTTSVoice(voiceName: String) {
         selectedVoice = voiceName
         if (ttsInitialized) {
@@ -87,26 +59,6 @@ class SoundAlarmManager(private val context: Context) {
     }
 
     /**
-     * Plays a sequence of audio files by name.
-     * Audio files must be located in res/raw/ directory.
-     * @param audioFiles List of audio file names (e.g., listOf("intro.m4a", "message.m4a"))
-     * @param volume Volume level (0.0 to 1.0). Default is 1.0 (maximum).
-     */
-    fun playMessage(audioFiles: List<String>, volume: Float = 1.0f) {
-        if (audioFiles.isEmpty()) {
-            Log.w(TAG, "Audio files list is empty")
-            return
-        }
-
-        stopSound()
-        audioQueue = audioFiles
-        currentAudioIndex = 0
-
-        Log.d(TAG, "Starting playback of ${audioFiles.size} audio files")
-        playNextAudio(volume)
-    }
-
-    /**
      * Plays text using text-to-speech.
      * @param text The text to speak.
      * @param volume Volume level (0.0 to 1.0). Default is 1.0 (maximum).
@@ -117,11 +69,8 @@ class SoundAlarmManager(private val context: Context) {
             Log.w(TAG, "TTS text is empty")
             return
         }
-
         stopSound()
-
         Log.d(TAG, "Playing TTS: $text (rate: $speechRate)")
-
         if (!ttsInitialized) {
             Log.d(TAG, "Initializing TextToSpeech engine")
             pendingTTSText = text
@@ -134,7 +83,6 @@ class SoundAlarmManager(private val context: Context) {
     private fun initializeTTS(volume: Float, speechRate: Float) {
         pendingVolume = volume
         pendingSpeechRate = speechRate
-
         textToSpeech = TextToSpeech(context) { status ->
             if (status == TextToSpeech.SUCCESS) {
                 textToSpeech?.let { tts ->
@@ -145,20 +93,14 @@ class SoundAlarmManager(private val context: Context) {
                     } else {
                         ttsInitialized = true
                         Log.d(TAG, "TTS initialized successfully")
-
-                        // Select best quality voice or user's preference
                         if (selectedVoice != null) {
                             applyVoiceSelection()
                         } else {
                             selectBestVoice()
                         }
-
-                        // Log available voices for debugging
                         tts.voices?.forEach { voice ->
                             Log.d(TAG, "Available voice: ${voice.name}, Quality: ${voice.quality}, Locale: ${voice.locale}")
                         }
-
-                        // Play pending text if any
                         pendingTTSText?.let { text ->
                             speakText(text, pendingVolume, pendingSpeechRate)
                             pendingTTSText = null
@@ -173,139 +115,41 @@ class SoundAlarmManager(private val context: Context) {
     }
 
     private fun selectBestVoice() {
-        // Try to select the highest quality US English voice
         textToSpeech?.voices
             ?.filter { it.locale.language == "en" && it.locale.country == "US" }
             ?.maxByOrNull { it.quality }
             ?.let { bestVoice ->
-                textToSpeech?.setVoice(bestVoice)
+                textToSpeech?.voice = bestVoice
                 Log.d(TAG, "Selected best voice: ${bestVoice.name} (Quality: ${bestVoice.quality})")
             }
     }
 
     private fun speakText(text: String, volume: Float, speechRate: Float) {
         textToSpeech?.let { tts ->
-            // Set speech rate (0.5 = half speed, 1.0 = normal, 2.0 = double speed)
             tts.setSpeechRate(speechRate)
-
-            // Set audio attributes for TTS
             val audioAttributes = AudioAttributes.Builder()
                 .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
                 .setUsage(AudioAttributes.USAGE_NOTIFICATION)
                 .build()
-
             tts.setAudioAttributes(audioAttributes)
-
-            // Set utterance progress listener
             tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                 override fun onStart(utteranceId: String?) {
                     Log.d(TAG, "TTS started speaking")
                 }
-
                 override fun onDone(utteranceId: String?) {
                     Log.d(TAG, "TTS completed")
                 }
-
+                @Deprecated("Deprecated in Java")
                 override fun onError(utteranceId: String?) {
                     Log.e(TAG, "TTS error")
                 }
             })
-
             val params = Bundle()
             params.putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, volume)
-
             tts.speak(text, TextToSpeech.QUEUE_FLUSH, params, "tts_utterance")
         } ?: run {
             Log.e(TAG, "TextToSpeech not initialized")
         }
-    }
-
-    private fun playNextAudio(volume: Float) {
-        if (currentAudioIndex >= audioQueue.size) {
-            Log.d(TAG, "Audio sequence completed")
-            audioQueue = emptyList()
-            return
-        }
-
-        val fileName = audioQueue[currentAudioIndex]
-        val resourceId = getResourceIdByName(fileName)
-
-        if (resourceId == 0) {
-            Log.e(TAG, "Audio file not found: $fileName")
-            currentAudioIndex++
-            handler.post { playNextAudio(volume) }
-            return
-        }
-
-        try {
-            // Ensure previous player is fully released
-            mediaPlayer?.release()
-            mediaPlayer = null
-
-            Log.d(TAG, "Creating MediaPlayer for: $fileName ($resourceId)")
-
-            // Use constructor instead of create() for better control
-            mediaPlayer = MediaPlayer().apply {
-                setAudioAttributes(
-                    AudioAttributes.Builder()
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                        .setUsage(AudioAttributes.USAGE_NOTIFICATION)
-                        .build()
-                )
-
-                setOnCompletionListener {
-                    Log.d(TAG, "Completed playing: $fileName")
-                    try {
-                        release()
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Error releasing MediaPlayer", e)
-                    }
-                    mediaPlayer = null
-                    currentAudioIndex++
-
-                    // Post to handler with delay for cleanup
-                    handler.postDelayed({ playNextAudio(volume) }, 300)
-                }
-
-                setOnErrorListener { mp, what, extra ->
-                    Log.e(TAG, "MediaPlayer error: what=$what, extra=$extra for file: $fileName")
-                    try {
-                        mp.release()
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Error releasing failed MediaPlayer", e)
-                    }
-                    mediaPlayer = null
-                    currentAudioIndex++
-                    handler.postDelayed({ playNextAudio(volume) }, 300)
-                    true
-                }
-
-                val afd = context.resources.openRawResourceFd(resourceId)
-                setDataSource(afd.fileDescriptor, afd.startOffset, afd.length)
-                afd.close()
-
-                prepare()
-                setVolume(volume, volume)
-                start()
-            }
-
-            Log.d(TAG, "Playing audio file: $fileName ($resourceId)")
-        } catch (e: Exception) {
-            Log.e(TAG, "Error playing audio: $fileName", e)
-            mediaPlayer?.release()
-            mediaPlayer = null
-            currentAudioIndex++
-            handler.postDelayed({ playNextAudio(volume) }, 300)
-        }
-    }
-
-    private fun getResourceIdByName(fileName: String): Int {
-        val resourceName = fileName.substringBeforeLast(".").lowercase()
-        return context.resources.getIdentifier(
-            resourceName,
-            "raw",
-            context.packageName
-        )
     }
 
     /**
@@ -323,28 +167,13 @@ class SoundAlarmManager(private val context: Context) {
             mediaPlayer = null
             audioQueue = emptyList()
             currentAudioIndex = 0
-
-            // Stop TTS if speaking
             textToSpeech?.stop()
-
             Log.d(TAG, "Audio playback stopped")
         } catch (e: Exception) {
             Log.e(TAG, "Error stopping audio", e)
         }
     }
 
-    /**
-     * Checks if audio is currently playing.
-     */
-    fun isPlaying(): Boolean {
-        val mediaPlayerPlaying = mediaPlayer?.isPlaying ?: false
-        val ttsPlaying = textToSpeech?.isSpeaking ?: false
-        return mediaPlayerPlaying || ttsPlaying
-    }
-
-    /**
-     * Clean up resources. Call this when the manager is no longer needed.
-     */
     fun cleanup() {
         stopSound()
         textToSpeech?.shutdown()
